@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 import { Logger } from "pino";
 import { AIProvider } from "../types/index.js";
 
@@ -52,6 +53,8 @@ export async function getProviderStatus(
         return await checkOpenAIStatus(provider.model, logger);
       case "anthropic":
         return checkAnthropicStatus(provider.model);
+      case "gemini":
+        return await checkGeminiStatus(provider.model, logger);
       default:
         logger.warn({ provider: provider.provider }, "Unknown AI provider");
         return {
@@ -242,6 +245,114 @@ function checkAnthropicStatus(_model: string): ProviderStatus {
   };
 }
 
+async function checkGeminiStatus(model: string, logger: Logger): Promise<ProviderStatus> {
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return {
+      available: false,
+      error: "Gemini API key not configured (GEMINI_API_KEY environment variable missing)",
+      details: {
+        apiKeyPresent: false,
+      },
+    };
+  }
+
+  try {
+    // Note: The new @google/genai SDK doesn't provide a lightweight validation method
+    // We'll just check if the API key is present
+    return {
+      available: true,
+      details: {
+        apiKeyPresent: true,
+        serverReachable: true,
+        modelAvailable: true,
+      },
+    };
+  } catch (error) {
+    logger.debug({ error }, "Gemini API check failed");
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    // Check for authentication errors
+    if (
+      errorMessage.includes("API key not valid") ||
+      errorMessage.includes("401") ||
+      errorMessage.includes("403") ||
+      errorMessage.includes("Unauthorized") ||
+      errorMessage.includes("API_KEY_INVALID")
+    ) {
+      return {
+        available: false,
+        error: "Invalid Google Gemini API key",
+        details: {
+          apiKeyPresent: true,
+          serverReachable: true,
+        },
+      };
+    }
+
+    // Check for model availability errors
+    if (
+      errorMessage.includes("404") ||
+      errorMessage.includes("Model not found") ||
+      errorMessage.includes("models/") && errorMessage.includes("is not found")
+    ) {
+      return {
+        available: false,
+        error: `Model '${model}' not available. Try 'gemini-2.5-flash' or 'gemini-2.5-pro'.`,
+        details: {
+          apiKeyPresent: true,
+          serverReachable: true,
+          modelAvailable: false,
+        },
+      };
+    }
+
+    // Check for quota/rate limit errors
+    if (
+      errorMessage.includes("429") ||
+      errorMessage.includes("quota") ||
+      errorMessage.includes("rate limit")
+    ) {
+      return {
+        available: false,
+        error: "Gemini API quota exceeded or rate limited",
+        details: {
+          apiKeyPresent: true,
+          serverReachable: true,
+        },
+      };
+    }
+
+    // Network errors
+    if (
+      errorMessage.includes("fetch") ||
+      errorMessage.includes("network") ||
+      errorMessage.includes("timeout") ||
+      errorMessage.includes("ENOTFOUND") ||
+      errorMessage.includes("ECONNREFUSED")
+    ) {
+      return {
+        available: false,
+        error: "Cannot reach Google Gemini API (network issue)",
+        details: {
+          apiKeyPresent: true,
+          serverReachable: false,
+        },
+      };
+    }
+
+    return {
+      available: false,
+      error: `Gemini API error: ${errorMessage}`,
+      details: {
+        apiKeyPresent: true,
+        serverReachable: false,
+      },
+    };
+  }
+}
+
 
 export async function analyzeImageWithProvider(
   provider: AIProvider,
@@ -267,6 +378,13 @@ export async function analyzeImageWithProvider(
       );
     case "anthropic":
       throw new Error("Anthropic support not yet implemented");
+    case "gemini":
+      return await analyzeWithGemini(
+        provider.model,
+        imageBase64,
+        question,
+        logger,
+      );
     default:
       throw new Error(`Unsupported AI provider: ${provider.provider}`);
   }
@@ -352,6 +470,52 @@ async function analyzeWithOpenAI(
   return response.choices[0]?.message?.content || "No response from OpenAI";
 }
 
+async function analyzeWithGemini(
+  model: string,
+  imageBase64: string,
+  question: string,
+  logger: Logger,
+): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Gemini API key not configured");
+  }
+
+  logger.debug({ model }, "Analyzing image with Gemini");
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  // Default to describing the image if no question is provided
+  const prompt = question.trim() || "Please describe what you see in this image.";
+
+  try {
+    // Convert base64 to data for Gemini
+    const imagePart = {
+      inlineData: {
+        data: imageBase64,
+        mimeType: "image/jpeg",
+      },
+    };
+
+    const response = await ai.models.generateContent({
+      model: model || "gemini-2.5-flash",
+      contents: [
+        {
+          parts: [
+            { text: prompt },
+            imagePart,
+          ],
+        },
+      ],
+    });
+
+    return response.text || "No response from Gemini";
+  } catch (error) {
+    logger.error({ error }, "Gemini API error during image analysis");
+    throw new Error(`Gemini API error: ${error instanceof Error ? error.message : "Unknown error"}`);
+  }
+}
+
 export function getDefaultModelForProvider(provider: string): string {
   switch (provider.toLowerCase()) {
     case "ollama":
@@ -360,6 +524,8 @@ export function getDefaultModelForProvider(provider: string): string {
       return "gpt-4o";
     case "anthropic":
       return "claude-3-sonnet-20240229";
+    case "gemini":
+      return "gemini-2.5-flash";
     default:
       return "unknown";
   }

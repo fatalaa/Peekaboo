@@ -89,6 +89,7 @@ describeSwiftTests("analyzeToolHandler Integration Tests", () => {
     currentGetDefaultModelForProviderImpl = (provider: string) => {
       if (provider === "ollama") return "default-ollama-model";
       if (provider === "openai") return "default-openai-model";
+      if (provider === "gemini") return "gemini-2.5-flash";
       return "unknown-default";
     };
     currentDetermineProviderAndModelImpl = async () => ({
@@ -363,6 +364,125 @@ describeSwiftTests("analyzeToolHandler Integration Tests", () => {
     const content = response.content as Array<{ type: string; text?: string }>;
     expect(content[0]?.text).toBe(
       "No valid AI providers found in PEEKABOO_AI_PROVIDERS configuration.",
+    );
+  });
+
+  it("should successfully call specified provider (Gemini) if available", async () => {
+    process.env.PEEKABOO_AI_PROVIDERS = "mocked_providers_exist"; // Allow to proceed
+    process.env.GEMINI_API_KEY = "test-gemini-key";
+    const geminiProvider: AIProvider = { provider: "gemini", model: "gemini-2.5-flash" };
+    currentParseAIProvidersImpl = () => [geminiProvider];
+    currentIsProviderAvailableImpl = async (p: AIProvider) =>
+      p.provider === "gemini";
+    currentAnalyzeImageWithProviderImpl = async () =>
+      "Gemini says: I see a beautiful landscape";
+    const requestedModel = "gemini-1.5-pro";
+    currentDetermineProviderAndModelImpl = async () => ({
+      provider: "gemini",
+      model: requestedModel,
+    });
+    const args = analyzeToolSchema.parse({
+      image_path: MOCK_IMAGE_PATH,
+      question: MOCK_QUESTION,
+      provider_config: { type: "gemini", model: requestedModel },
+    });
+    const response: Result = await analyzeToolHandler(args, {
+      logger: mockLogger,
+    });
+    expect(response.isError).not.toBe(true);
+    expect(response.analysis_text).toBe("Gemini says: I see a beautiful landscape");
+    expect(response.model_used).toBe(`gemini/${requestedModel}`);
+  });
+
+  it("should use default Gemini model if not specified in call", async () => {
+    process.env.PEEKABOO_AI_PROVIDERS = "mocked_providers_exist"; // Allow to proceed
+    process.env.GEMINI_API_KEY = "test-gemini-key";
+    const geminiProviderEnv: AIProvider = {
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+    };
+    currentParseAIProvidersImpl = () => [geminiProviderEnv];
+    currentIsProviderAvailableImpl = async (p: AIProvider) =>
+      p.provider === "gemini";
+    currentAnalyzeImageWithProviderImpl = async () =>
+      "Gemini default model response";
+    currentDetermineProviderAndModelImpl = async () => ({
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+    });
+    const args = analyzeToolSchema.parse({
+      image_path: MOCK_IMAGE_PATH,
+      question: MOCK_QUESTION,
+      provider_config: { type: "gemini" },
+    });
+    const response: Result = await analyzeToolHandler(args, {
+      logger: mockLogger,
+    });
+    expect(response.isError).not.toBe(true);
+    expect(response.analysis_text).toBe("Gemini default model response");
+    expect(response.model_used).toBe("gemini/gemini-2.5-flash");
+  });
+
+  it("should include Gemini in auto-selection when available", async () => {
+    process.env.PEEKABOO_AI_PROVIDERS = "mocked_providers_exist"; // Allow to proceed
+    process.env.GEMINI_API_KEY = "test-gemini-key";
+    const geminiProviderEnv: AIProvider = {
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+    };
+    const ollamaProviderEnv: AIProvider = {
+      provider: "ollama",
+      model: "llava:latest",
+    };
+    currentParseAIProvidersImpl = () => [geminiProviderEnv, ollamaProviderEnv];
+    currentIsProviderAvailableImpl = async (p: AIProvider) =>
+      p.provider === "gemini"; // Only Gemini is available
+    currentAnalyzeImageWithProviderImpl = async () =>
+      "Auto-selected Gemini response";
+    currentDetermineProviderAndModelImpl = async () => ({
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+    });
+    const args = analyzeToolSchema.parse({
+      image_path: MOCK_IMAGE_PATH,
+      question: MOCK_QUESTION,
+    });
+    const response: Result = await analyzeToolHandler(args, {
+      logger: mockLogger,
+    });
+    expect(response.isError).not.toBe(true);
+    expect(response.analysis_text).toBe("Auto-selected Gemini response");
+    expect(response.model_used).toBe("gemini/gemini-2.5-flash");
+  });
+
+  it("should handle Gemini API errors gracefully", async () => {
+    process.env.PEEKABOO_AI_PROVIDERS = "mocked_providers_exist"; // Allow to proceed
+    process.env.GEMINI_API_KEY = "test-gemini-key";
+    const geminiProvider: AIProvider = { provider: "gemini", model: "gemini-2.5-flash" };
+    currentParseAIProvidersImpl = () => [geminiProvider];
+    currentIsProviderAvailableImpl = async () => true;
+    currentAnalyzeImageWithProviderImpl = async () => {
+      throw new Error("Gemini API error: Invalid API key");
+    };
+    currentDetermineProviderAndModelImpl = async () => ({
+      provider: "gemini",
+      model: "gemini-2.5-flash",
+    });
+    const args = analyzeToolSchema.parse({
+      image_path: MOCK_IMAGE_PATH,
+      question: MOCK_QUESTION,
+      provider_config: { type: "gemini" },
+    });
+    const response: Result = await analyzeToolHandler(args, {
+      logger: mockLogger,
+    });
+    expect(response.isError).toBe(true);
+    const content = response.content as Array<{ type: string; text?: string }>;
+    expect(content[0]?.text).toContain(
+      "AI analysis failed: Gemini API error: Invalid API key",
+    );
+    expect((response._meta as any)?.backend_error_code).toBe(
+      "AI_PROVIDER_ERROR",
     );
   });
 });

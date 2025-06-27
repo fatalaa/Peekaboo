@@ -21,7 +21,7 @@ export const analyzeToolSchema = z.object({
   provider_config: z
     .object({
       type: z
-        .enum(["auto", "ollama", "openai"])
+        .enum(["auto", "ollama", "openai", "gemini"])
         .default("auto")
         .describe(
           "AI provider, default: auto. 'auto' uses server's PEEKABOO_AI_PROVIDERS environment preference. Specific provider must be enabled in server's PEEKABOO_AI_PROVIDERS.",
