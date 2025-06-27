@@ -49,6 +49,7 @@
   "author": "Peter Steinberger <steipete@gmail.com>",
   "license": "MIT",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "openai": "^4.0.0",
     "pino": "^9.7.0",

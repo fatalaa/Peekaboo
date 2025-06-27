@@ -53,8 +53,9 @@ Or manually add to your Cursor settings:
         "@steipete/peekaboo-mcp"
       ],
       "env": {
-        "PEEKABOO_AI_PROVIDERS": "openai/gpt-4o,ollama/llava:latest",
-        "OPENAI_API_KEY": "your-openai-api-key-here"
+        "PEEKABOO_AI_PROVIDERS": "openai/gpt-4o,ollama/llava:latest,gemini/gemini-2.5-flash",
+        "OPENAI_API_KEY": "your-openai-api-key-here",
+        "GEMINI_API_KEY": "your-gemini-api-key-here"
       }
     }
   }
@@ -79,8 +80,9 @@ Add the Peekaboo configuration:
         "@steipete/peekaboo-mcp"
       ],
       "env": {
-        "PEEKABOO_AI_PROVIDERS": "openai/gpt-4o,ollama/llava:latest",
-        "OPENAI_API_KEY": "your-openai-api-key-here"
+        "PEEKABOO_AI_PROVIDERS": "openai/gpt-4o,ollama/llava:latest,gemini/gemini-2.5-flash",
+        "OPENAI_API_KEY": "your-openai-api-key-here",
+        "GEMINI_API_KEY": "your-gemini-api-key-here"
       }
     }
   }
@@ -95,8 +97,9 @@ Peekaboo can be configured using environment variables:
 
 ```json
 {
-  "PEEKABOO_AI_PROVIDERS": "openai/gpt-4o,ollama/llava:latest",
+  "PEEKABOO_AI_PROVIDERS": "openai/gpt-4o,ollama/llava:latest,gemini/gemini-2.5-flash",
   "OPENAI_API_KEY": "your-openai-api-key-here",
+  "GEMINI_API_KEY": "your-gemini-api-key-here",
   "PEEKABOO_LOG_LEVEL": "debug",
   "PEEKABOO_LOG_FILE": "~/Library/Logs/peekaboo-mcp-debug.log",
   "PEEKABOO_DEFAULT_SAVE_PATH": "~/Pictures/PeekabooCaptures",
@@ -131,7 +134,7 @@ Or using semicolon separators:
 
 Each entry follows the format `provider_name/model_identifier`. You can use either commas (`,`) or semicolons (`;`) as separators.
 
-- **`provider_name`**: Currently supported values are `ollama` (for local Ollama instances) and `openai`. Support for `anthropic` is planned.
+- **`provider_name`**: Currently supported values are `ollama` (for local Ollama instances), `openai`, and `gemini`. Support for `anthropic` is planned.
 - **`model_identifier`**: The specific model to use for that provider (e.g., `llava:latest`, `gpt-4o`).
 
 The `analyze` tool and the `image` tool (when a `question` is provided) will use these configurations. If the `provider_config` argument in these tools is set to `\"auto\"` (the default for `analyze`, and an option for `image`), Peekaboo will try providers from `PEEKABOO_AI_PROVIDERS` in the order they are listed, checking for necessary API keys (like `OPENAI_API_KEY`) or service availability (like Ollama running at `http://localhost:11434` or the URL specified in `PEEKABOO_OLLAMA_BASE_URL`).
@@ -230,6 +233,40 @@ Add Ollama to your Claude Desktop configuration:
 }
 ```
 
+### Setting Up Google Gemini
+
+Google's Gemini models support image analysis through the Gemini API.
+
+#### Getting a Gemini API Key
+
+1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click "Create API Key"
+4. Copy your API key
+
+#### Configuring Peekaboo with Gemini
+
+Add Gemini to your configuration:
+
+```json
+{
+  "mcpServers": {
+    "peekaboo": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@steipete/peekaboo-mcp"
+      ],
+      "env": {
+        "PEEKABOO_AI_PROVIDERS": "gemini/gemini-2.5-flash",
+        "GEMINI_API_KEY": "your-gemini-api-key-here"
+      }
+    }
+  }
+}
+```
+
+See [available Gemini models](https://ai.google.dev/gemini-api/docs/models) for model options.
 
 ### macOS Permissions
 

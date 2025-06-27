@@ -33,12 +33,24 @@ vi.mock("openai", () => {
   };
 });
 
+// Mock Google Generative AI
+vi.mock("@google/generative-ai", () => {
+  return {
+    GoogleGenerativeAI: vi.fn().mockImplementation((apiKey) => ({
+      getGenerativeModel: vi.fn().mockImplementation(({ model }) => ({
+        generateContent: vi.fn(),
+      })),
+    })),
+  };
+});
+
 describe("AI Providers Utility", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.PEEKABOO_OLLAMA_BASE_URL;
     delete process.env.OPENAI_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.GEMINI_API_KEY;
     (global.fetch as vi.Mock).mockReset();
   });
 
@@ -213,6 +225,125 @@ describe("AI Providers Utility", () => {
         { provider: "unknown" },
         "Unknown AI provider",
       );
+    });
+
+    it("should return true for available Gemini (API key set and valid)", async () => {
+      process.env.GEMINI_API_KEY = "test-gemini-key";
+      
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const mockGoogleAI = GoogleGenerativeAI as any;
+      const mockCountTokens = vi.fn().mockResolvedValue({ totalTokens: 1 });
+      
+      const mockGetGenerativeModel = vi.fn().mockReturnValue({
+        countTokens: mockCountTokens,
+      });
+      
+      mockGoogleAI.mockImplementation(() => ({
+        getGenerativeModel: mockGetGenerativeModel,
+      }));
+
+      const result = await isProviderAvailable(
+        { provider: "gemini", model: "gemini-2.5-flash" },
+        mockLogger,
+      );
+      expect(result).toBe(true);
+      expect(mockCountTokens).toHaveBeenCalledWith("test");
+    });
+
+    it("should return false for unavailable Gemini (API key not set)", async () => {
+      const result = await isProviderAvailable(
+        { provider: "gemini", model: "gemini-2.5-flash" },
+        mockLogger,
+      );
+      expect(result).toBe(false);
+    });
+
+    it("should return false for invalid Gemini API key", async () => {
+      process.env.GEMINI_API_KEY = "invalid-key";
+      
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const mockGoogleAI = GoogleGenerativeAI as any;
+      const mockCountTokens = vi.fn().mockRejectedValue(new Error("API key not valid. Please pass a valid API key."));
+      
+      const mockGetGenerativeModel = vi.fn().mockReturnValue({
+        countTokens: mockCountTokens,
+      });
+      
+      mockGoogleAI.mockImplementation(() => ({
+        getGenerativeModel: mockGetGenerativeModel,
+      }));
+
+      const result = await isProviderAvailable(
+        { provider: "gemini", model: "gemini-2.5-flash" },
+        mockLogger,
+      );
+      expect(result).toBe(false);
+    });
+
+    it("should return false for unavailable Gemini model", async () => {
+      process.env.GEMINI_API_KEY = "test-key";
+      
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const mockGoogleAI = GoogleGenerativeAI as any;
+      const mockCountTokens = vi.fn().mockRejectedValue(new Error("404: Model not found: models/invalid-model"));
+      
+      const mockGetGenerativeModel = vi.fn().mockReturnValue({
+        countTokens: mockCountTokens,
+      });
+      
+      mockGoogleAI.mockImplementation(() => ({
+        getGenerativeModel: mockGetGenerativeModel,
+      }));
+
+      const result = await isProviderAvailable(
+        { provider: "gemini", model: "invalid-model" },
+        mockLogger,
+      );
+      expect(result).toBe(false);
+    });
+
+    it("should return false for Gemini quota exceeded", async () => {
+      process.env.GEMINI_API_KEY = "test-key";
+      
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const mockGoogleAI = GoogleGenerativeAI as any;
+      const mockCountTokens = vi.fn().mockRejectedValue(new Error("429: Resource has been exhausted (e.g. check quota)."));
+      
+      const mockGetGenerativeModel = vi.fn().mockReturnValue({
+        countTokens: mockCountTokens,
+      });
+      
+      mockGoogleAI.mockImplementation(() => ({
+        getGenerativeModel: mockGetGenerativeModel,
+      }));
+
+      const result = await isProviderAvailable(
+        { provider: "gemini", model: "gemini-2.5-flash" },
+        mockLogger,
+      );
+      expect(result).toBe(false);
+    });
+
+    it("should return false for Gemini network errors", async () => {
+      process.env.GEMINI_API_KEY = "test-key";
+      
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const mockGoogleAI = GoogleGenerativeAI as any;
+      const mockCountTokens = vi.fn().mockRejectedValue(new Error("fetch failed: ECONNREFUSED"));
+      
+      const mockGetGenerativeModel = vi.fn().mockReturnValue({
+        countTokens: mockCountTokens,
+      });
+      
+      mockGoogleAI.mockImplementation(() => ({
+        getGenerativeModel: mockGetGenerativeModel,
+      }));
+
+      const result = await isProviderAvailable(
+        { provider: "gemini", model: "gemini-2.5-flash" },
+        mockLogger,
+      );
+      expect(result).toBe(false);
     });
 
     it("should handle errors during ollama availability check gracefully (fetch throws)", async () => {
@@ -465,6 +596,121 @@ describe("AI Providers Utility", () => {
         ),
       ).rejects.toThrow("Unsupported AI provider: unknown");
     });
+
+    it("should call analyzeWithGemini for gemini provider", async () => {
+      process.env.GEMINI_API_KEY = "test-gemini-key";
+      
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const mockGoogleAI = GoogleGenerativeAI as any;
+      const mockGenerateContent = vi.fn().mockResolvedValue({
+        response: {
+          text: vi.fn().mockReturnValue("Gemini says hello"),
+        },
+      });
+      
+      const mockGetGenerativeModel = vi.fn().mockReturnValue({
+        generateContent: mockGenerateContent,
+      });
+      
+      mockGoogleAI.mockImplementation(() => ({
+        getGenerativeModel: mockGetGenerativeModel,
+      }));
+
+      const result = await analyzeImageWithProvider(
+        { provider: "gemini", model: "gemini-2.5-flash" },
+        "path/img.png",
+        imageBase64,
+        question,
+        mockLogger,
+      );
+      expect(result).toBe("Gemini says hello");
+      expect(mockGetGenerativeModel).toHaveBeenCalledWith({
+        model: "gemini-2.5-flash",
+      });
+      expect(mockGenerateContent).toHaveBeenCalledWith([
+        question,
+        {
+          inlineData: {
+            data: imageBase64,
+            mimeType: "image/jpeg",
+          },
+        },
+      ]);
+    });
+
+    it("should throw error if Gemini API key is missing for gemini provider", async () => {
+      await expect(
+        analyzeImageWithProvider(
+          { provider: "gemini", model: "gemini-2.5-flash" },
+          "path/img.png",
+          imageBase64,
+          question,
+          mockLogger,
+        ),
+      ).rejects.toThrow("Gemini API key not configured");
+    });
+
+    it("should return default message if Gemini provides no response content", async () => {
+      process.env.GEMINI_API_KEY = "test-gemini-key";
+      
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const mockGoogleAI = GoogleGenerativeAI as any;
+      const mockGenerateContent = vi.fn().mockResolvedValue({
+        response: {
+          text: vi.fn().mockReturnValue(null),
+        },
+      });
+      
+      const mockGetGenerativeModel = vi.fn().mockReturnValue({
+        generateContent: mockGenerateContent,
+      });
+      
+      mockGoogleAI.mockImplementation(() => ({
+        getGenerativeModel: mockGetGenerativeModel,
+      }));
+
+      const result = await analyzeImageWithProvider(
+        { provider: "gemini", model: "gemini-2.5-flash" },
+        "path/img.png",
+        imageBase64,
+        question,
+        mockLogger,
+      );
+      expect(result).toBe("No response from Gemini");
+    });
+
+    it("should use default prompt for empty question with Gemini", async () => {
+      process.env.GEMINI_API_KEY = "test-gemini-key";
+      
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const mockGoogleAI = GoogleGenerativeAI as any;
+      const mockGenerateContent = vi.fn().mockResolvedValue({
+        response: {
+          text: vi.fn().mockReturnValue("This image shows a code editor."),
+        },
+      });
+      
+      const mockGetGenerativeModel = vi.fn().mockReturnValue({
+        generateContent: mockGenerateContent,
+      });
+      
+      mockGoogleAI.mockImplementation(() => ({
+        getGenerativeModel: mockGetGenerativeModel,
+      }));
+
+      const result = await analyzeImageWithProvider(
+        { provider: "gemini", model: "gemini-2.5-flash" },
+        "path/img.png",
+        imageBase64,
+        "", // Empty question
+        mockLogger,
+      );
+      expect(result).toBe("This image shows a code editor.");
+      expect(mockGenerateContent).toHaveBeenCalledWith([
+        "Please describe what you see in this image.",
+        expect.any(Object),
+      ]);
+    });
   });
 
   describe("getDefaultModelForProvider", () => {
@@ -474,6 +720,7 @@ describe("AI Providers Utility", () => {
       expect(getDefaultModelForProvider("anthropic")).toBe(
         "claude-3-sonnet-20240229",
       );
+      expect(getDefaultModelForProvider("gemini")).toBe("gemini-2.5-flash");
       expect(getDefaultModelForProvider("unknown")).toBe("unknown");
     });
   });
